@@ -31,7 +31,3 @@ Client
 - Processing Service
 - Analytics Service
 - Common
-
-## Status
-
-Phase 0 - Project foundation
