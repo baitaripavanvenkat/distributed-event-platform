@@ -7,7 +7,11 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.Map;
 
+
 public record EventRequest(
+
+        @NotBlank(message = "eventId is required")
+        String eventId,
 
         @NotBlank(message = "eventType is required")
         String eventType,

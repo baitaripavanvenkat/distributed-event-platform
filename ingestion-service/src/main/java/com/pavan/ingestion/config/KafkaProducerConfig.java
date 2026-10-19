@@ -1,6 +1,6 @@
 package com.pavan.ingestion.config;
 
-import com.pavan.ingestion.dto.EventMessage;
+import com.pavan.common.event.EventMessage;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.context.annotation.Bean;
