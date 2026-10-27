@@ -3,6 +3,7 @@ package com.pavan.processing.config;
 import com.pavan.common.event.EventMessage;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.CooperativeStickyAssignor;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,8 +18,10 @@ import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExceptionMatcher;
+import org.springframework.kafka.support.converter.ConversionException;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Map;
@@ -39,11 +42,12 @@ class KafkaConfigTest {
         ReflectionTestUtils.setField(kafkaConfig, "groupId", "event-processing-group");
         ReflectionTestUtils.setField(kafkaConfig, "autoOffsetReset", "earliest");
         ReflectionTestUtils.setField(kafkaConfig, "dltTopic", "events.DLT");
+        ReflectionTestUtils.setField(kafkaConfig, "concurrency", 4);
     }
 
     @Test
-    @DisplayName("Kafka listener container factory AckMode is configured to BATCH")
-    void testKafkaListenerContainerFactory_AckModeIsBatch() {
+    @DisplayName("Kafka listener container factory AckMode is configured to BATCH and concurrency is 4")
+    void testKafkaListenerContainerFactory_AckModeIsBatchAndConcurrencyIs4() {
         ConsumerFactory<String, EventMessage> consumerFactory = kafkaConfig.consumerFactory();
         ProducerFactory<String, EventMessage> producerFactory = kafkaConfig.dltProducerFactory();
         KafkaTemplate<String, EventMessage> kafkaTemplate = kafkaConfig.dltKafkaTemplate(producerFactory);
@@ -58,11 +62,16 @@ class KafkaConfigTest {
                 factory.getContainerProperties().getAckMode(),
                 "AckMode must be BATCH to prevent overwhelming coordinator with per-record offset commits"
         );
+        assertEquals(
+                4,
+                ReflectionTestUtils.getField(factory, "concurrency"),
+                "Concurrency must match the 4 partitions of the events topic"
+        );
     }
 
     @Test
-    @DisplayName("ConsumerFactory wraps key and value deserializers with ErrorHandlingDeserializer")
-    void testConsumerFactory_UsesErrorHandlingDeserializer() {
+    @DisplayName("ConsumerFactory wraps key and value deserializers with ErrorHandlingDeserializer and configures CooperativeStickyAssignor")
+    void testConsumerFactory_UsesErrorHandlingDeserializerAndCooperativeSticky() {
         ConsumerFactory<String, EventMessage> consumerFactory = kafkaConfig.consumerFactory();
         assertNotNull(consumerFactory);
         assertTrue(consumerFactory instanceof DefaultKafkaConsumerFactory);
@@ -84,6 +93,11 @@ class KafkaConfigTest {
         assertEquals("event-processing-group", config.get(ConsumerConfig.GROUP_ID_CONFIG));
         assertEquals("earliest", config.get(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG));
         assertEquals(false, config.get(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG));
+        assertEquals(
+                CooperativeStickyAssignor.class.getName(),
+                config.get(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG)
+        );
+        assertEquals(500, config.get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG));
     }
 
     @Test
@@ -116,7 +130,7 @@ class KafkaConfigTest {
     }
 
     @Test
-    @DisplayName("DefaultErrorHandler marks IllegalArgumentException and DeserializationException as non-retryable")
+    @DisplayName("DefaultErrorHandler marks non-retryable exceptions properly")
     void testDefaultErrorHandler_NonRetryableExceptions() {
         ProducerFactory<String, EventMessage> producerFactory = kafkaConfig.dltProducerFactory();
         KafkaTemplate<String, EventMessage> kafkaTemplate = kafkaConfig.dltKafkaTemplate(producerFactory);
@@ -133,6 +147,8 @@ class KafkaConfigTest {
         assertEquals(Boolean.FALSE, entries.get(IllegalArgumentException.class), "IllegalArgumentException must be classified as non-retryable (false)");
         assertEquals(Boolean.FALSE, entries.get(DeserializationException.class), "DeserializationException must be classified as non-retryable (false)");
         assertEquals(Boolean.FALSE, entries.get(ClassCastException.class), "ClassCastException must be classified as non-retryable (false)");
+        assertEquals(Boolean.FALSE, entries.get(MessageConversionException.class), "MessageConversionException must be classified as non-retryable (false)");
+        assertEquals(Boolean.FALSE, entries.get(ConversionException.class), "ConversionException must be classified as non-retryable (false)");
     }
 
     @Test

@@ -30,11 +30,21 @@ public class EventProcessingService {
     @Transactional
     public void process(EventMessage event) {
 
+        if (event == null || event.eventId() == null || event.eventId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Event and eventId must not be null or blank"
+            );
+        }
+
+        log.debug("Processing event: eventId={}, eventType={}, userId={}",
+                event.eventId(), event.eventType(), event.userId());
+
         final String payload;
 
         try {
             payload = objectMapper.writeValueAsString(event.metadata());
         } catch (JsonProcessingException e) {
+            log.error("Failed to serialize metadata for eventId={}: {}", event.eventId(), e.getMessage());
             throw new IllegalArgumentException(
                     "Failed to serialize event metadata",
                     e

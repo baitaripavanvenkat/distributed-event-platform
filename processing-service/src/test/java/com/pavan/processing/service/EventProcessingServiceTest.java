@@ -115,6 +115,49 @@ class EventProcessingServiceTest {
     }
 
     @Test
+    @DisplayName("Null event throws non-retryable IllegalArgumentException")
+    void testProcess_NullEvent_ThrowsIllegalArgumentException() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> eventProcessingService.process(null)
+        );
+        verify(eventRepository, never()).insertIfAbsent(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Null or blank eventId throws non-retryable IllegalArgumentException")
+    void testProcess_NullOrBlankEventId_ThrowsIllegalArgumentException() {
+        EventMessage nullIdEvent = new EventMessage(
+                null,
+                "ORDER_PLACED",
+                "user-100",
+                Instant.now(),
+                "web-client",
+                Map.of()
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> eventProcessingService.process(nullIdEvent)
+        );
+
+        EventMessage blankIdEvent = new EventMessage(
+                "   ",
+                "ORDER_PLACED",
+                "user-100",
+                Instant.now(),
+                "web-client",
+                Map.of()
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> eventProcessingService.process(blankIdEvent)
+        );
+        verify(eventRepository, never()).insertIfAbsent(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("Metadata serialization failure throws non-retryable IllegalArgumentException")
     void testProcess_SerializationFailure_ThrowsIllegalArgumentException() throws Exception {
         EventMessage event = createSampleEvent("event-bad-meta");

@@ -4,6 +4,7 @@ import com.pavan.common.event.EventMessage;
 
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.CooperativeStickyAssignor;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -25,10 +26,12 @@ import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.converter.ConversionException;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
+import org.springframework.messaging.converter.MessageConversionException;
 
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -49,6 +52,9 @@ public class KafkaConfig {
 
     @Value("${spring.kafka.dlt.topic:events.DLT}")
     private String dltTopic;
+
+    @Value("${spring.kafka.listener.concurrency:4}")
+    private int concurrency;
 
     /*
      * Consumer configuration
@@ -76,6 +82,16 @@ public class KafkaConfig {
         props.put(
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,
                 false
+        );
+
+        props.put(
+                ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
+                CooperativeStickyAssignor.class.getName()
+        );
+
+        props.put(
+                ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+                500
         );
 
         JacksonJsonDeserializer<EventMessage> jsonDeserializer =
@@ -194,7 +210,9 @@ public class KafkaConfig {
         errorHandler.addNotRetryableExceptions(
                 IllegalArgumentException.class,
                 DeserializationException.class,
-                ClassCastException.class
+                ClassCastException.class,
+                MessageConversionException.class,
+                ConversionException.class
         );
 
         return errorHandler;
@@ -219,6 +237,7 @@ public class KafkaConfig {
 
         factory.setConsumerFactory(consumerFactory);
         factory.setCommonErrorHandler(kafkaErrorHandler);
+        factory.setConcurrency(concurrency);
         factory.getContainerProperties()
                 .setAckMode(ContainerProperties.AckMode.BATCH);
 
