@@ -9,6 +9,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -21,11 +22,13 @@ import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
-import org.springframework.kafka.listener.ContainerProperties;
 
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -35,9 +38,17 @@ import java.util.Map;
 @Configuration
 public class KafkaConfig {
 
-    private static final String BOOTSTRAP_SERVERS = "localhost:9092";
+    @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+    private String bootstrapServers;
 
-    private static final String DLT_TOPIC = "events.DLT";
+    @Value("${spring.kafka.consumer.group-id:event-processing-group}")
+    private String groupId;
+
+    @Value("${spring.kafka.consumer.auto-offset-reset:earliest}")
+    private String autoOffsetReset;
+
+    @Value("${spring.kafka.dlt.topic:events.DLT}")
+    private String dltTopic;
 
     /*
      * Consumer configuration
@@ -49,17 +60,17 @@ public class KafkaConfig {
 
         props.put(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                BOOTSTRAP_SERVERS
+                bootstrapServers
         );
 
         props.put(
                 ConsumerConfig.GROUP_ID_CONFIG,
-                "event-processing-group"
+                groupId
         );
 
         props.put(
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
-                "earliest"
+                autoOffsetReset
         );
 
         props.put(
@@ -73,11 +84,17 @@ public class KafkaConfig {
         jsonDeserializer.addTrustedPackages(
                 "com.pavan.common.event"
         );
+        jsonDeserializer.setUseTypeHeaders(false);
+
+        ErrorHandlingDeserializer<String> errorHandlingKeyDeserializer =
+                new ErrorHandlingDeserializer<>(new StringDeserializer());
+        ErrorHandlingDeserializer<EventMessage> errorHandlingValueDeserializer =
+                new ErrorHandlingDeserializer<>(jsonDeserializer);
 
         return new DefaultKafkaConsumerFactory<>(
                 props,
-                new StringDeserializer(),
-                jsonDeserializer
+                errorHandlingKeyDeserializer,
+                errorHandlingValueDeserializer
         );
     }
 
@@ -91,12 +108,22 @@ public class KafkaConfig {
 
         props.put(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                BOOTSTRAP_SERVERS
+                bootstrapServers
         );
 
         props.put(
                 ProducerConfig.ACKS_CONFIG,
                 "all"
+        );
+
+        props.put(
+                ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,
+                true
+        );
+
+        props.put(
+                ProducerConfig.RETRIES_CONFIG,
+                3
         );
 
         return new DefaultKafkaProducerFactory<>(
@@ -130,13 +157,14 @@ public class KafkaConfig {
                         dltKafkaTemplate,
                         (record, exception) ->
                                 new TopicPartition(
-                                        DLT_TOPIC,
+                                        dltTopic,
                                         record.partition()
                                 )
                 );
 
         /*
-         * Treat a failed DLT publish as a recovery failure.
+         * Treat a failed DLT publish as a recovery failure so the offset
+         * is not acknowledged if the message could not be sent to the DLT.
          */
         recoverer.setFailIfSendResultIsError(true);
 
@@ -144,8 +172,9 @@ public class KafkaConfig {
     }
 
     /*
-     * Retry failed processing three times.
+     * Retry transient processing failures three times.
      * Initial attempt + three retries = four attempts.
+     * Non-retryable failures bypass retries and are sent directly to the DLT.
      */
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(
@@ -157,14 +186,25 @@ public class KafkaConfig {
                 3L
         );
 
-        return new DefaultErrorHandler(
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(
                 deadLetterPublishingRecoverer,
                 backOff
         );
+
+        errorHandler.addNotRetryableExceptions(
+                IllegalArgumentException.class,
+                DeserializationException.class,
+                ClassCastException.class
+        );
+
+        return errorHandler;
     }
 
     /*
-     * Listener container configuration
+     * Listener container configuration:
+     * AckMode.BATCH ensures offsets are committed after all records in the
+     * polled batch are processed, reducing coordinator commit traffic from
+     * 1000/sec to ~10-20/sec without acknowledging uncommitted DB transactions.
      */
     @Bean(name = "kafkaListenerContainerFactory")
     public ConcurrentKafkaListenerContainerFactory<String, EventMessage>
@@ -178,11 +218,9 @@ public class KafkaConfig {
                 new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(consumerFactory);
-
         factory.setCommonErrorHandler(kafkaErrorHandler);
-
         factory.getContainerProperties()
-                .setAckMode(ContainerProperties.AckMode.RECORD);
+                .setAckMode(ContainerProperties.AckMode.BATCH);
 
         return factory;
     }
@@ -193,7 +231,7 @@ public class KafkaConfig {
     @Bean
     public NewTopic eventsDltTopic() {
 
-        return TopicBuilder.name(DLT_TOPIC)
+        return TopicBuilder.name(dltTopic)
                 .partitions(4)
                 .replicas(1)
                 .build();

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pavan.common.event.EventMessage;
 import com.pavan.processing.repository.EventRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +13,9 @@ import java.time.Instant;
 
 @Service
 public class EventProcessingService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(EventProcessingService.class);
 
     private final EventRepository eventRepository;
     private final ObjectMapper objectMapper;
@@ -36,7 +41,6 @@ public class EventProcessingService {
             );
         }
 
-
         int inserted = eventRepository.insertIfAbsent(
                 event.eventId(),
                 event.eventType(),
@@ -48,7 +52,7 @@ public class EventProcessingService {
         );
 
         if (inserted != 1) {
-            System.out.println("Duplicate event ignored: " + event.eventId());
+            log.debug("Duplicate event ignored: eventId={}", event.eventId());
         }
     }
 }

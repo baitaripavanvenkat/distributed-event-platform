@@ -16,8 +16,9 @@ public class EventConsumer {
     }
 
     @KafkaListener(
-            topics = "events",
-            groupId = "event-processing-group"
+            topics = "${spring.kafka.consumer.topic:events}",
+            groupId = "${spring.kafka.consumer.group-id:event-processing-group}",
+            concurrency = "${spring.kafka.listener.concurrency:4}"
     )
     public void consume(EventMessage event) {
         eventProcessingService.process(event);

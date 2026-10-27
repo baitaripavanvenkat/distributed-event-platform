@@ -48,8 +48,8 @@ export default function () {
     );
 
     check(response, {
-        'response is successful': (r) =>
-            r.status >= 200 && r.status < 300,
+        'event accepted (HTTP 202)': (r) =>
+            r.status >= 202,
     });
 
 

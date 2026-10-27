@@ -26,7 +26,7 @@ server:
 outbox:
   publisher:
     fixed-delay-ms: 1000
-    batch-size: 100
+    batch-size: 250
 
 management:
   endpoints:

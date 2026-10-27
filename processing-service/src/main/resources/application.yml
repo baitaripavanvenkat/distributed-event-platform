@@ -7,10 +7,9 @@ spring:
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  spring:
-    sql:
-      init:
-        mode: always
+  sql:
+    init:
+      mode: always
 
   jpa:
     hibernate:
@@ -26,11 +25,9 @@ spring:
       group-id: event-processing-group
       auto-offset-reset: earliest
       enable-auto-commit: false
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
-      properties:
-        spring.json.value.default.type: com.pavan.common.event.EventMessage
-        spring.json.trusted.packages: com.pavan.common.event
+      topic: events
+    listener:
+      concurrency: 4
 
 management:
   endpoints:
@@ -40,6 +37,9 @@ management:
   endpoint:
     health:
       show-details: always
+
 logging:
-  level.org.hibernate.SQL=WARN
-  level.org.hibernate.orm.jdbc.bind=WARN
+  level:
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    com.pavan.processing: INFO
