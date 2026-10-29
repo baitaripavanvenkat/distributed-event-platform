@@ -35,3 +35,6 @@ docker-data/
 # Local configuration
 application-local.properties
 application-local.yml
+
+
+/kafka-data-backup-20261029-150354/

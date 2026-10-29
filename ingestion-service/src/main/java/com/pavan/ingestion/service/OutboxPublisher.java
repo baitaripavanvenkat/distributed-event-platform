@@ -52,7 +52,7 @@ public class OutboxPublisher {
                 FROM ingestion_outbox
                 WHERE status = 'PENDING'
                 ORDER BY created_at
-                LIMIT ?hmm
+                LIMIT ?
                 """,
                 (rs, rowNum) -> new OutboxRecord(
                         rs.getString("event_id"),
